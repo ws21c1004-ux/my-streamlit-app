@@ -8,26 +8,42 @@ from openai import OpenAI
 client = OpenAI()
 
 # 페이지 설정
-st.set_page_config(page_title="AI 음성 변환기", page_icon="🔊")
-st.title("🔊 AI 텍스트 음성 변환기")
+st.set_page_config(page_title="AI 영어 통역기", page_icon="🌐")
+st.title("🌐 AI 영어 통역기")
 
 # 텍스트 입력
 text = st.text_area(
-    "읽을 텍스트를 입력하세요",
-    "안녕하세요. OpenAI 텍스트 음성 변환 실습입니다."
+    "텍스트를 입력하면 영어로 통역해 드립니다.",
+    "이 곳에 영어로 통역할 문장을 입력하세요. 어떤 언어든 상관이 없습니다."
 )
 
 # 버튼
-if st.button("음성 생성하기"):
+if st.button("영어로 통역하기"):
     if text.strip() == "":
-        st.warning("읽을 텍스트를 입력해주세요.")
+        st.warning("번역할 텍스트를 입력해주세요.")
     else:
+        # 영문 번역
+        prompt = f"""
+        다음 문장을 영문으로 번역한 후 번역된 문장만 출력하세요.
+        ---
+        "{text}"
+        """
+
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            input=prompt
+        )
+
+        st.markdown("### 💬 번역 결과")
+        st.write(response.output_text)
+
         # TTS 생성
         speech = client.audio.speech.create(
             model="tts-1",
             voice="alloy",
-            input=text
+            input=response.output_text
         )
+
         audio_bytes = speech.content
 
         # 음성 출력
