@@ -9,9 +9,9 @@ import pandas as pd
 import streamlit as st
 from openai import OpenAI
 
-# ============================================================
+# ==================================================
 # 1. 기본 설정
-# ============================================================
+# ==================================================
 
 st.set_page_config(
     page_title="에이블 AI 업무 비서 Pro",
@@ -21,6 +21,10 @@ st.set_page_config(
 
 KST = ZoneInfo("Asia/Seoul")
 TODAY = datetime.now(KST).date()
+
+SERVICE_ACCOUNT_FILE = (
+    "/content/drive/MyDrive/project03/service_account.json"
+)
 
 
 def setting(name, default=None):
@@ -42,9 +46,9 @@ if not api_key:
 client = OpenAI(api_key=api_key)
 
 
-# ============================================================
+# ==================================================
 # 2. 세션 상태
-# ============================================================
+# ==================================================
 
 INITIAL = {
     "messages": [],
@@ -64,45 +68,45 @@ INITIAL = {
 for key, value in INITIAL.items():
     if key not in st.session_state:
         st.session_state[key] = (
-            value.copy() if isinstance(value, (list, dict)) else value
+            value.copy()
+            if isinstance(value, (list, dict))
+            else value
         )
 
 
 def reset_all():
     for key, value in INITIAL.items():
         st.session_state[key] = (
-            value.copy() if isinstance(value, (list, dict)) else value
+            value.copy()
+            if isinstance(value, (list, dict))
+            else value
         )
 
 
-# ============================================================
-# 3. AI 역할
-# ============================================================
+# ==================================================
+# 3. AI 역할 및 실시간 채팅
+# ==================================================
 
 ROLE = """
-당신은 김 대리의 개인 AI 업무 비서 '에이블'입니다.
+당신은 김 대리의 AI 업무 비서 '에이블'입니다.
 
-[역할]
-1. 회의록을 요약합니다.
-2. 주요 논의 및 결정 사항을 정리합니다.
-3. 담당자별 업무(R&R)를 분석합니다.
-4. 김 대리의 담당 업무를 자세히 설명합니다.
-5. 업무 우선순위를 분석합니다.
-6. 업무를 실행 가능한 단계로 세분화합니다.
-7. 마감일과 예상 작업시간을 고려해 일정을 제안합니다.
+역할:
+1. 회의록 요약
+2. 주요 결정 사항 정리
+3. 담당자별 업무 R&R 분석
+4. 김 대리 담당 업무 설명
+5. 업무 우선순위 분석
+6. AI 업무 세분화
+7. 일정 및 마감일 관리
 
-[원칙]
-- 한국어로 친절하고 명료하게 답변합니다.
-- 회의록에 없는 사실을 만들어내지 않습니다.
-- 담당자와 마감일을 추측하지 않습니다.
-- AI의 판단과 회의록의 사실을 구분합니다.
-- 캘린더 등록 전 반드시 사용자 승인을 받습니다.
+원칙:
+- 한국어로 명확하게 답변합니다.
+- 회의록에 없는 사실은 만들지 않습니다.
+- 담당자와 기한을 임의로 추측하지 않습니다.
+- AI의 제안과 실제 회의 내용을 구분합니다.
+- 캘린더 등록 전 반드시 승인을 받습니다.
 """
 
-
-# ============================================================
-# 4. 멀티턴 AI 대화
-# ============================================================
 
 def chat(question):
     messages = [
@@ -111,7 +115,7 @@ def chat(question):
             "content": (
                 ROLE
                 + f"\n오늘 날짜: {TODAY}"
-                + "\n[회의록]\n"
+                + "\n회의록:\n"
                 + (
                     st.session_state.meeting_text
                     or "업로드된 회의록 없음"
@@ -142,14 +146,14 @@ def chat(question):
     return answer
 
 
-# ============================================================
-# 5. 회의록 업무 추출
-# ============================================================
+# ==================================================
+# 4. 회의록 업무 추출
+# ==================================================
 
 TASK_TOOL = [{
     "type": "function",
     "name": "extract_tasks",
-    "description": "회의록에서 담당 업무를 추출합니다.",
+    "description": "회의록에서 업무를 추출합니다.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -172,14 +176,9 @@ TASK_TOOL = [{
                         }
                     },
                     "required": [
-                        "name",
-                        "description",
-                        "owner",
-                        "deadline",
-                        "urgent",
-                        "important",
-                        "reason",
-                        "hours"
+                        "name", "description", "owner",
+                        "deadline", "urgent", "important",
+                        "reason", "hours"
                     ],
                     "additionalProperties": False
                 }
@@ -203,11 +202,11 @@ def extract_tasks(meeting_text):
             {
                 "role": "user",
                 "content": (
-                    "다음 회의록에서 실제 언급된 업무만 추출하세요.\n"
-                    "기한이 명확하면 YYYY-MM-DD 형식으로 작성하세요.\n"
-                    "기한이 불명확하면 null로 작성하세요.\n"
-                    "소요시간이 명시되지 않으면 null로 작성하세요.\n"
-                    "긴급도와 중요도 판단 근거를 포함하세요.\n\n"
+                    "회의록에 언급된 실제 업무만 추출하세요. "
+                    "기한은 명확한 경우 YYYY-MM-DD, "
+                    "불명확하면 null로 작성하세요. "
+                    "소요시간도 명시되지 않으면 null입니다. "
+                    "중요도와 긴급도의 판단 근거를 작성하세요.\n\n"
                     + meeting_text
                 )
             }
@@ -235,14 +234,14 @@ def extract_tasks(meeting_text):
     return []
 
 
-# ============================================================
-# 6. AI 업무 세분화
-# ============================================================
+# ==================================================
+# 5. AI 업무 세분화
+# ==================================================
 
 SUBTASK_TOOL = [{
     "type": "function",
     "name": "split_task",
-    "description": "업무를 실행 가능한 세부 단계로 분할합니다.",
+    "description": "업무를 실행 가능한 단계로 분할합니다.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -256,9 +255,7 @@ SUBTASK_TOOL = [{
                         "hours": {"type": "number"}
                     },
                     "required": [
-                        "title",
-                        "details",
-                        "hours"
+                        "title", "details", "hours"
                     ],
                     "additionalProperties": False
                 }
@@ -272,11 +269,11 @@ SUBTASK_TOOL = [{
 
 
 def split_task(task):
-    total_hours = task.get("hours")
+    hours = task.get("hours")
 
-    if not total_hours or total_hours <= 0:
+    if not hours or hours <= 0:
         raise ValueError(
-            "AI 업무 세분화 전에 예상 작업시간을 입력하세요."
+            "먼저 예상 작업시간을 입력해 주세요."
         )
 
     response = client.responses.create(
@@ -285,17 +282,16 @@ def split_task(task):
             {
                 "role": "system",
                 "content": (
-                    "당신은 업무 계획 전문가입니다. "
-                    "업무를 2~6개의 실행 가능한 단계로 분할하세요. "
-                    "각 단계의 예상 작업시간을 배분하세요."
+                    "업무를 2~6개의 실행 가능한 단계로 "
+                    "나누고 예상시간을 배분하세요."
                 )
             },
             {
                 "role": "user",
                 "content": json.dumps({
-                    "task": task["name"],
+                    "name": task["name"],
                     "description": task["description"],
-                    "total_hours": total_hours
+                    "total_hours": hours
                 }, ensure_ascii=False)
             }
         ],
@@ -312,26 +308,20 @@ def split_task(task):
             and item.name == "split_task"
         ):
             steps = json.loads(item.arguments)["steps"]
-
-            steps = [
-                step for step in steps
-                if step["hours"] > 0
-            ]
+            steps = [s for s in steps if s["hours"] > 0]
 
             if not steps:
-                raise ValueError("세부 작업이 생성되지 않았습니다.")
+                raise ValueError("세부 작업 생성에 실패했습니다.")
 
-            hours_sum = sum(step["hours"] for step in steps)
+            total = sum(s["hours"] for s in steps)
 
             for step in steps:
                 step["hours"] = round(
-                    total_hours * step["hours"] / hours_sum,
-                    2
+                    hours * step["hours"] / total, 2
                 )
 
             steps[-1]["hours"] = round(
-                total_hours
-                - sum(step["hours"] for step in steps[:-1]),
+                hours - sum(s["hours"] for s in steps[:-1]),
                 2
             )
 
@@ -340,9 +330,9 @@ def split_task(task):
     return []
 
 
-# ============================================================
-# 7. 업무 분석
-# ============================================================
+# ==================================================
+# 6. 업무 우선순위
+# ==================================================
 
 def quadrant(task):
     urgent = task["urgent"]
@@ -354,7 +344,6 @@ def quadrant(task):
         return "Q2"
     if urgent:
         return "Q3"
-
     return "Q4"
 
 
@@ -370,104 +359,80 @@ def is_my_task(task):
     return "김" in owner and "대리" in owner
 
 
-def analyze_workload(tasks, capacity):
-    loads = {}
-
-    for task in tasks:
-        if not is_my_task(task):
-            continue
-
-        if task["status"] == "완료":
-            continue
-
-        hours = task.get("hours")
-        deadline = parse_date(task.get("deadline"))
-
-        if not hours or not deadline or deadline < TODAY:
-            continue
-
-        days = []
-        current = TODAY
-
-        while current <= deadline:
-            if current.weekday() < 5:
-                days.append(current)
-            current += timedelta(days=1)
-
-        if not days:
-            continue
-
-        per_day = float(hours) / len(days)
-
-        for day in days:
-            loads[day] = loads.get(day, 0) + per_day
-
-    return loads
-
-
-# ============================================================
-# 8. Google Calendar 연결
-# ============================================================
+# ==================================================
+# 7. Google Calendar 인증 - 수정된 부분
+# ==================================================
 
 def calendar_service():
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
 
-    scopes = [
-        "https://www.googleapis.com/auth/calendar.events",
-        "https://www.googleapis.com/auth/calendar.readonly"
-    ]
+    path = (
+        setting("GOOGLE_SERVICE_ACCOUNT_FILE")
+        or SERVICE_ACCOUNT_FILE
+    )
 
-    service_file = setting("GOOGLE_SERVICE_ACCOUNT_FILE")
-    service_info = setting("gcp_service_account")
-
-    if service_file:
-        credentials = (
-            service_account.Credentials.from_service_account_file(
-                service_file,
-                scopes=scopes
-            )
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            f"서비스 계정 JSON 파일이 없습니다: {path}"
         )
 
-    elif service_info:
-        credentials = (
-            service_account.Credentials.from_service_account_info(
-                dict(service_info),
-                scopes=scopes
-            )
+    credentials = (
+        service_account.Credentials.from_service_account_file(
+            path,
+            scopes=[
+                "https://www.googleapis.com/auth/calendar"
+            ]
         )
+    )
 
-    else:
-        raise RuntimeError(
-            "Google Calendar 서비스 계정이 설정되지 않았습니다."
-        )
-
-    return build(
+    service = build(
         "calendar",
         "v3",
         credentials=credentials,
         cache_discovery=False
     )
 
+    return service
+
 
 def calendar_id():
-    value = (
-        setting("GOOGLE_CALENDAR_ID")
+    cid = (
+        st.session_state.get("calendar_id_input", "").strip()
+        or setting("GOOGLE_CALENDAR_ID")
         or setting("calendar_id")
     )
 
-    if not value:
-        raise RuntimeError("Google Calendar ID가 없습니다.")
+    if not cid:
+        raise ValueError(
+            "왼쪽 사이드바에서 Google Calendar ID를 입력하세요."
+        )
 
-    return value
+    return cid
 
+
+def test_calendar_connection():
+    service = calendar_service()
+
+    result = service.calendars().get(
+        calendarId=calendar_id()
+    ).execute()
+
+    return result.get("summary", "이름 없는 캘린더")
+
+
+# ==================================================
+# 8. Google Calendar 충돌 감지
+# ==================================================
 
 def calendar_busy(start_day, end_day):
     service = calendar_service()
     cid = calendar_id()
 
     start_dt = datetime.combine(
-        start_day, time.min, tzinfo=KST
+        start_day,
+        time.min,
+        tzinfo=KST
     )
 
     end_dt = datetime.combine(
@@ -490,17 +455,20 @@ def calendar_busy(start_day, end_day):
     if entry.get("errors"):
         raise RuntimeError(str(entry["errors"]))
 
-    return [
-        (
-            datetime.fromisoformat(
-                item["start"].replace("Z", "+00:00")
-            ).astimezone(KST),
-            datetime.fromisoformat(
-                item["end"].replace("Z", "+00:00")
-            ).astimezone(KST)
-        )
-        for item in entry.get("busy", [])
-    ]
+    busy = []
+
+    for item in entry.get("busy", []):
+        start = datetime.fromisoformat(
+            item["start"].replace("Z", "+00:00")
+        ).astimezone(KST)
+
+        end = datetime.fromisoformat(
+            item["end"].replace("Z", "+00:00")
+        ).astimezone(KST)
+
+        busy.append((start, end))
+
+    return busy
 
 
 def overlaps(start, end, busy):
@@ -510,9 +478,9 @@ def overlaps(start, end, busy):
     )
 
 
-# ============================================================
-# 9. 빈 시간 추천
-# ============================================================
+# ==================================================
+# 9. 일정 추천
+# ==================================================
 
 def propose_slots(task, capacity, busy, reserved):
     deadline = parse_date(task.get("deadline"))
@@ -520,38 +488,41 @@ def propose_slots(task, capacity, busy, reserved):
 
     if deadline is None or not hours or hours <= 0:
         raise ValueError(
-            "유효한 마감일과 예상 작업시간이 필요합니다."
+            "마감일과 예상 작업시간을 확인해 주세요."
         )
 
     if deadline < TODAY:
-        raise ValueError("마감일이 지났습니다.")
+        raise ValueError("이미 마감일이 지난 업무입니다.")
 
-    remaining = math.ceil(float(hours) * 2) * 30
-    daily_limit = int(capacity * 60)
+    if (deadline - TODAY).days > 90:
+        raise ValueError(
+            "90일 이내 마감 업무만 지원합니다."
+        )
+
+    minutes_left = math.ceil(
+        float(hours) * 60 / 30
+    ) * 30
 
     slots = []
-    current_day = TODAY
+    daily_limit = int(capacity * 60)
+    day = TODAY
     now = datetime.now(KST)
 
-    while current_day <= deadline and remaining > 0:
-        if current_day.weekday() < 5:
+    while day <= deadline and minutes_left > 0:
+        if day.weekday() < 5:
             used = 0
 
             current = datetime.combine(
-                current_day,
-                time(9),
-                tzinfo=KST
+                day, time(9), tzinfo=KST
             )
 
             closing = datetime.combine(
-                current_day,
-                time(18),
-                tzinfo=KST
+                day, time(18), tzinfo=KST
             )
 
             while (
                 current + timedelta(minutes=30) <= closing
-                and remaining > 0
+                and minutes_left > 0
             ):
                 next_time = current + timedelta(minutes=30)
 
@@ -566,26 +537,29 @@ def propose_slots(task, capacity, busy, reserved):
                 ):
                     slots.append((current, next_time))
                     used += 30
-                    remaining -= 30
+                    minutes_left -= 30
 
                 current = next_time
 
-        current_day += timedelta(days=1)
+        day += timedelta(days=1)
 
-    return slots, remaining
+    return slots, minutes_left
 
+
+# ==================================================
+# 10. Google Calendar 일정 등록
+# ==================================================
 
 def insert_calendar_slots(task, slots):
     service = calendar_service()
     cid = calendar_id()
-
     created = []
 
-    for idx, (start, end) in enumerate(slots, 1):
-        body = {
+    for index, (start, end) in enumerate(slots, 1):
+        event = {
             "summary": (
                 f"[에이블] {task['name']} "
-                f"({idx}/{len(slots)})"
+                f"({index}/{len(slots)})"
             ),
             "description": (
                 f"담당자: {task['owner']}\n"
@@ -603,25 +577,25 @@ def insert_calendar_slots(task, slots):
         }
 
         try:
-            event = service.events().insert(
+            result = service.events().insert(
                 calendarId=cid,
-                body=body
+                body=event
             ).execute()
 
-            created.append(event)
+            created.append(result)
 
         except Exception as error:
             raise RuntimeError(
-                f"{len(created)}개 등록 후 실패했습니다. "
-                f"중복 등록 여부를 확인하세요: {error}"
+                f"{len(created)}개 등록 후 오류 발생: {error}. "
+                "캘린더에서 중복 등록 여부를 확인하세요."
             ) from error
 
     return created
 
 
-# ============================================================
-# 10. 보고서 생성
-# ============================================================
+# ==================================================
+# 11. 보고서
+# ==================================================
 
 def make_task_df(tasks):
     return pd.DataFrame([
@@ -642,7 +616,7 @@ def make_task_df(tasks):
 def report_markdown():
     lines = [
         "# 에이블 AI 업무 보고서",
-        f"생성일: {TODAY}",
+        f"작성일: {TODAY}",
         "",
         "## 회의 요약",
         st.session_state.summary or "요약 없음",
@@ -656,10 +630,10 @@ def report_markdown():
             f"- 담당자: {task['owner']}",
             f"- 마감일: {task.get('deadline') or '미정'}",
             f"- 우선순위: {quadrant(task)}",
-            f"- 판단 근거: {task['reason']}",
             f"- 예상시간: {task.get('hours') or '미정'}",
             f"- 진행상태: {task['status']}",
-            f"- 상세내용: {task['description']}"
+            f"- 내용: {task['description']}",
+            f"- 판단 근거: {task['reason']}"
         ])
 
         for step in st.session_state.subtasks.get(
@@ -672,53 +646,47 @@ def report_markdown():
 
         lines.append("")
 
-    lines.append(
-        "※ AI가 생성한 우선순위 및 예상 작업시간은 "
-        "추정치이므로 검토가 필요합니다."
-    )
-
     return "\n".join(lines)
 
 
-# ============================================================
-# 11. CSS 디자인
-# ============================================================
+# ==================================================
+# 12. CSS 디자인
+# ==================================================
 
 st.markdown("""
 <style>
 .stApp {
-    background-color: #FFFFFF;
-    color: #202638;
+    background: #FFFFFF;
+    color: #222638;
 }
 
 section[data-testid="stSidebar"] {
-    background-color: #F0F2F6;
+    background: #F1F3F7;
     border-right: 1px solid #E4E7ED;
 }
 
 h1, h2, h3 {
     color: #24283A !important;
-    letter-spacing: -0.7px;
 }
 
 .stButton > button[kind="primary"],
 button[kind="primary"] {
-    background-color: #FF4B50 !important;
+    background: #FF4B50 !important;
     border-color: #FF4B50 !important;
     color: white !important;
-    border-radius: 9px;
+    border-radius: 9px !important;
 }
 
 .stButton > button {
     border-radius: 9px;
-    min-height: 39px;
+    min-height: 40px;
 }
 
 [data-testid="stMetric"] {
-    border: 1px solid #E9EBF0;
+    background: white;
+    border: 1px solid #E7EAF0;
     border-radius: 12px;
     padding: 12px;
-    background: white;
 }
 
 .robot-shell {
@@ -753,9 +721,9 @@ button[kind="primary"] {
 """, unsafe_allow_html=True)
 
 
-# ============================================================
-# 12. 미래지향적 AI 로봇 캐릭터
-# ============================================================
+# ==================================================
+# 13. 미래지향적 AI 로봇
+# ==================================================
 
 ROBOT_SVG = """
 <div class="robot-shell">
@@ -847,6 +815,7 @@ stroke="#8199BD" stroke-width="13"
 stroke-linecap="round"/>
 
 </svg>
+
 <div class="robot-caption">
 에이블 · AI 업무 파트너
 </div>
@@ -854,9 +823,9 @@ stroke-linecap="round"/>
 """
 
 
-# ============================================================
-# 13. 사이드바
-# ============================================================
+# ==================================================
+# 14. 왼쪽 설정 사이드바
+# ==================================================
 
 with st.sidebar:
     st.header("⚙️ 에이블 설정")
@@ -869,8 +838,40 @@ with st.sidebar:
     )
 
     st.caption(
-        "일정 추천: 평일 09:00~18:00 / 30분 단위"
+        "평일 09:00~18:00 / 30분 단위"
     )
+
+    st.divider()
+
+    st.subheader("📅 Google Calendar 연결")
+
+    st.text_input(
+        "Google Calendar ID",
+        value=setting("GOOGLE_CALENDAR_ID", ""),
+        placeholder="example@gmail.com",
+        key="calendar_id_input"
+    )
+
+    if st.button(
+        "🔗 Google Calendar 연결 테스트",
+        use_container_width=True
+    ):
+        try:
+            with st.spinner("캘린더 연결 확인 중..."):
+                name = test_calendar_connection()
+
+            st.success(f"연결 성공: {name}")
+
+        except Exception as error:
+            st.error(f"연결 실패: {error}")
+
+    if os.path.isfile(
+        setting("GOOGLE_SERVICE_ACCOUNT_FILE")
+        or SERVICE_ACCOUNT_FILE
+    ):
+        st.success("서비스 계정 JSON 파일 확인됨")
+    else:
+        st.warning("서비스 계정 JSON 파일을 찾지 못했습니다.")
 
     st.divider()
 
@@ -882,19 +883,14 @@ with st.sidebar:
         st.info("회의록 미업로드")
 
     st.metric(
-        "💬 저장된 대화",
+        "저장된 대화",
         len(st.session_state.messages) // 2
     )
 
     st.metric(
-        "📌 추출된 업무",
+        "추출된 업무",
         len(st.session_state.tasks)
     )
-
-    with st.expander("🧠 응답 설정"):
-        st.caption(
-            "회의록 사실과 AI 제안을 구분하여 답변합니다."
-        )
 
     with st.expander("🔊 음성 설정"):
         st.checkbox(
@@ -903,13 +899,8 @@ with st.sidebar:
         )
 
         st.checkbox(
-            "음성 자동 재생",
+            "음성 자동재생",
             key="autoplay"
-        )
-
-    with st.expander("📅 캘린더 연결 안내"):
-        st.caption(
-            "Google 서비스 계정 및 Calendar ID 설정 필요"
         )
 
     st.divider()
@@ -929,15 +920,15 @@ with st.sidebar:
         st.rerun()
 
 
-# ============================================================
-# 14. 메인 화면
-# ============================================================
+# ==================================================
+# 15. 메인 화면
+# ==================================================
 
 st.title("🤖 에이블 | 나의 AI 업무 비서")
 
 st.caption(
-    "회의를 이해하고, 업무를 계획하고, "
-    "일정까지 연결하는 나만의 AI 파트너"
+    "회의록 분석부터 업무 계획, 일정 관리까지 "
+    "함께하는 AI 업무 파트너"
 )
 
 home, dashboard, schedule, reports = st.tabs([
@@ -948,9 +939,9 @@ home, dashboard, schedule, reports = st.tabs([
 ])
 
 
-# ============================================================
+# ==================================================
 # TAB 1. AI 비서
-# ============================================================
+# ==================================================
 
 with home:
     left, right = st.columns(
@@ -973,18 +964,20 @@ with home:
         """, unsafe_allow_html=True)
 
         with st.expander(
-            "📄 회의록 업로드 / 변경",
-            expanded=not bool(st.session_state.meeting_text)
+            "📄 회의록 업로드 / 분석",
+            expanded=not bool(
+                st.session_state.meeting_text
+            )
         ):
             uploaded = st.file_uploader(
-                "회의록 TXT",
+                "회의록 TXT 파일",
                 type=["txt"],
                 key="meeting_file"
             )
 
             if uploaded is not None:
-                meeting_text = uploaded.getvalue().decode(
-                    "utf-8-sig"
+                meeting_text = (
+                    uploaded.getvalue().decode("utf-8-sig")
                 )
 
                 digest = hashlib.sha256(
@@ -1014,13 +1007,11 @@ with home:
                     use_container_width=True
                 ):
                     try:
-                        with st.spinner(
-                            "회의록을 분석하는 중..."
-                        ):
+                        with st.spinner("회의록 분석 중..."):
                             summary = chat(
-                                "회의록을 주요 논의, 결정 사항, "
-                                "김 대리 담당 업무, 마감일 중심으로 "
-                                "정리해줘."
+                                "회의록을 요약하고 주요 논의, "
+                                "결정 사항, 김 대리 담당 업무, "
+                                "마감일을 정리해 주세요."
                             )
 
                             tasks = extract_tasks(
@@ -1031,9 +1022,8 @@ with home:
                             st.session_state.tasks = tasks
 
                         st.success(
-                            f"분석 완료: {len(tasks)}개 업무 추출"
+                            f"{len(tasks)}개 업무 추출 완료"
                         )
-
                         st.rerun()
 
                     except Exception as error:
@@ -1041,20 +1031,18 @@ with home:
                             f"회의록 분석 실패: {error}"
                         )
 
-        with st.expander("🎙️ 음성으로 말하기"):
+        with st.expander("🎙️ 음성 대화"):
             recording = st.audio_input(
                 "에이블에게 음성으로 요청하기"
             )
 
             if st.button(
-                "🎤 음성 인식 후 질문",
-                use_container_width=True,
-                disabled=recording is None
+                "🎤 음성 인식 및 AI 답변",
+                disabled=recording is None,
+                use_container_width=True
             ):
                 try:
-                    with st.spinner(
-                        "음성 인식 및 답변 생성 중..."
-                    ):
+                    with st.spinner("음성 처리 중..."):
                         transcript = (
                             client.audio.transcriptions.create(
                                 model="whisper-1",
@@ -1118,7 +1106,7 @@ with home:
             if not st.session_state.messages:
                 st.write(
                     "🤖 안녕하세요! 저는 에이블이에요. "
-                    "회의록을 올리고 필요한 업무를 물어보세요!"
+                    "무엇을 도와드릴까요?"
                 )
 
             for message in st.session_state.messages:
@@ -1150,17 +1138,13 @@ with home:
 
         if submitted and question.strip():
             try:
-                with st.spinner(
-                    "에이블이 답변하는 중..."
-                ):
+                with st.spinner("답변 생성 중..."):
                     chat(question.strip())
 
                 st.rerun()
 
             except Exception as error:
-                st.error(
-                    f"대화 오류: {error}"
-                )
+                st.error(f"대화 오류: {error}")
 
         if st.session_state.summary:
             with st.expander("📝 최근 회의 요약"):
@@ -1169,9 +1153,9 @@ with home:
                 )
 
 
-# ============================================================
+# ==================================================
 # TAB 2. 업무 대시보드
-# ============================================================
+# ==================================================
 
 with dashboard:
     st.subheader("📊 업무 대시보드")
@@ -1181,60 +1165,48 @@ with dashboard:
     if not tasks:
         st.info(
             "AI 비서 탭에서 회의록을 업로드하고 "
-            "업무 추출을 실행하세요."
+            "업무를 추출하세요."
         )
 
     else:
         total = len(tasks)
 
         completed = sum(
-            task["status"] == "완료"
-            for task in tasks
+            t["status"] == "완료"
+            for t in tasks
         )
 
         ongoing = sum(
-            task["status"] == "진행 중"
-            for task in tasks
+            t["status"] == "진행 중"
+            for t in tasks
         )
 
         overdue = sum(
-            parse_date(task.get("deadline")) is not None
-            and parse_date(task.get("deadline")) < TODAY
-            and task["status"] != "완료"
-            for task in tasks
+            parse_date(t.get("deadline")) is not None
+            and parse_date(t.get("deadline")) < TODAY
+            and t["status"] != "완료"
+            for t in tasks
         )
 
         cols = st.columns(4)
 
         for col, label, value in zip(
             cols,
-            [
-                "전체 업무",
-                "완료",
-                "진행 중",
-                "기한 초과"
-            ],
-            [
-                total,
-                completed,
-                ongoing,
-                overdue
-            ]
+            ["전체 업무", "완료", "진행 중", "기한 초과"],
+            [total, completed, ongoing, overdue]
         ):
             col.metric(label, value)
 
-        progress = completed / total
-
         st.progress(
-            progress,
-            text=f"전체 진행률 {progress:.0%}"
+            completed / total,
+            text=f"전체 진행률 {completed / total:.0%}"
         )
 
         st.subheader("🎯 아이젠하워 매트릭스")
 
         cols = st.columns(2)
 
-        quadrant_labels = {
+        labels = {
             "Q1": "🔴 긴급·중요",
             "Q2": "🔵 중요·비긴급",
             "Q3": "🟠 긴급·비중요",
@@ -1246,13 +1218,11 @@ with dashboard:
         ):
             with cols[idx % 2]:
                 with st.container(border=True):
-                    st.markdown(
-                        f"**{quadrant_labels[q]}**"
-                    )
+                    st.markdown(f"**{labels[q]}**")
 
                     selected = [
-                        task for task in tasks
-                        if quadrant(task) == q
+                        t for t in tasks
+                        if quadrant(t) == q
                     ]
 
                     for task in selected:
@@ -1275,7 +1245,7 @@ with dashboard:
 
                 st.write(
                     "**마감일:**",
-                    task.get("deadline") or "기한 미정"
+                    task.get("deadline") or "미정"
                 )
 
                 st.caption(
@@ -1286,10 +1256,7 @@ with dashboard:
 
                 with col1:
                     statuses = [
-                        "예정",
-                        "진행 중",
-                        "완료",
-                        "보류"
+                        "예정", "진행 중", "완료", "보류"
                     ]
 
                     task["status"] = st.selectbox(
@@ -1321,8 +1288,7 @@ with dashboard:
                         )
 
                         st.session_state.calendar_proposals.pop(
-                            task["id"],
-                            None
+                            task["id"], None
                         )
 
                 if st.button(
@@ -1331,13 +1297,11 @@ with dashboard:
                 ):
                     try:
                         with st.spinner(
-                            "업무를 단계별로 분해하고 있습니다..."
+                            "세부 작업 생성 중..."
                         ):
-                            steps = split_task(task)
-
                             st.session_state.subtasks[
                                 task["id"]
-                            ] = steps
+                            ] = split_task(task)
 
                         st.rerun()
 
@@ -1353,15 +1317,42 @@ with dashboard:
                         f"{idx}. **{step['title']}** "
                         f"— {step['hours']}시간"
                     )
-
                     st.caption(step["details"])
 
         st.subheader("🚨 업무 과부하 점검")
 
-        loads = analyze_workload(
-            tasks,
-            daily_capacity
-        )
+        loads = {}
+
+        for task in tasks:
+            if (
+                not is_my_task(task)
+                or task["status"] == "완료"
+                or not task.get("hours")
+            ):
+                continue
+
+            deadline = parse_date(
+                task.get("deadline")
+            )
+
+            if deadline is None or deadline < TODAY:
+                continue
+
+            days = []
+            day = TODAY
+
+            while day <= deadline:
+                if day.weekday() < 5:
+                    days.append(day)
+
+                day += timedelta(days=1)
+
+            if days:
+                for d in days:
+                    loads[d] = (
+                        loads.get(d, 0)
+                        + float(task["hours"]) / len(days)
+                    )
 
         if loads:
             df = pd.DataFrame([
@@ -1370,11 +1361,9 @@ with dashboard:
                     "예상 업무시간": round(hours, 2)
                 }
                 for day, hours in sorted(loads.items())
-            ])
+            ]).set_index("날짜")
 
-            st.bar_chart(
-                df.set_index("날짜")
-            )
+            st.bar_chart(df)
 
             for day, hours in sorted(loads.items()):
                 if hours > daily_capacity:
@@ -1385,14 +1374,14 @@ with dashboard:
 
         else:
             st.caption(
-                "분석 가능한 업무가 없거나 "
+                "분석할 김 대리 업무가 없거나 "
                 "예상시간과 마감일이 미정입니다."
             )
 
 
-# ============================================================
-# TAB 3. 일정 관리
-# ============================================================
+# ==================================================
+# TAB 3. Google Calendar 일정 관리
+# ==================================================
 
 with schedule:
     st.subheader(
@@ -1400,9 +1389,9 @@ with schedule:
     )
 
     st.caption(
-        "기존 캘린더의 바쁜 시간을 조회하고, "
-        "빈 시간에 30분 단위로 작업을 제안합니다. "
-        "일정 등록은 사용자 승인 후 진행합니다."
+        "기존 캘린더의 바쁜 시간을 조회하고 "
+        "빈 시간에 업무를 배치합니다. "
+        "실제 등록 전 승인을 요청합니다."
     )
 
     if not st.session_state.tasks:
@@ -1417,8 +1406,7 @@ with schedule:
                 f"{task.get('deadline') or '마감일 미정'}"
             ):
                 st.write(
-                    "담당자:",
-                    task["owner"]
+                    "담당자:", task["owner"]
                 )
 
                 st.write(
@@ -1442,11 +1430,6 @@ with schedule:
                         if deadline is None or deadline < TODAY:
                             raise ValueError(
                                 "유효한 미래 마감일이 필요합니다."
-                            )
-
-                        if (deadline - TODAY).days > 90:
-                            raise ValueError(
-                                "90일 이내 마감 업무만 지원합니다."
                             )
 
                         with st.spinner(
@@ -1531,9 +1514,8 @@ with schedule:
 
                     if remaining:
                         st.warning(
-                            "마감일까지 충분한 시간이 없습니다. "
-                            "전체 업무를 배치할 수 없어 "
-                            "일정을 등록하지 않습니다."
+                            "마감일까지 충분한 빈 시간이 없습니다. "
+                            "일부 일정만 등록하지 않습니다."
                         )
 
                     elif slots:
@@ -1542,16 +1524,17 @@ with schedule:
                                 str(task["id"])
                                 + str(slots)
                                 + str(task.get("hours"))
+                                + calendar_id()
                             ).encode()
                         ).hexdigest()
 
                         if signature in st.session_state.registered:
                             st.success(
-                                "현재 세션에서 이미 등록한 일정입니다."
+                                "현재 세션에서 이미 등록된 일정입니다."
                             )
 
                         elif st.button(
-                            "✅ 추천 일정 Google Calendar 등록 승인",
+                            "✅ Google Calendar 일정 등록 승인",
                             type="primary",
                             key=f"commit_{task['id']}"
                         ):
@@ -1566,12 +1549,11 @@ with schedule:
                                     for start, end in slots
                                 ):
                                     st.session_state.calendar_proposals.pop(
-                                        task["id"],
-                                        None
+                                        task["id"], None
                                     )
 
                                     st.error(
-                                        "새로운 일정이 감지되었습니다. "
+                                        "새로운 일정 충돌이 감지되었습니다. "
                                         "다시 추천해 주세요."
                                     )
 
@@ -1584,13 +1566,12 @@ with schedule:
                                     st.session_state.registered[
                                         signature
                                     ] = [
-                                        event.get("htmlLink", "")
-                                        for event in created
+                                        e.get("htmlLink", "")
+                                        for e in created
                                     ]
 
                                     st.success(
-                                        f"{len(created)}개 작업 블록 "
-                                        "등록 완료!"
+                                        f"{len(created)}개 일정 등록 완료!"
                                     )
 
                             except Exception as error:
@@ -1599,16 +1580,16 @@ with schedule:
                                 )
 
 
-# ============================================================
+# ==================================================
 # TAB 4. 보고서 다운로드
-# ============================================================
+# ==================================================
 
 with reports:
     st.subheader("📥 업무 보고서 다운로드")
 
     st.caption(
-        "회의 요약, 담당자, 마감일, AI 세부 작업, "
-        "업무 진행 상태를 포함합니다."
+        "회의 요약, 담당자, 마감일, "
+        "업무 우선순위, 세부 작업을 포함합니다."
     )
 
     if (
@@ -1649,14 +1630,14 @@ with reports:
             st.markdown(report)
 
 
-# ============================================================
-# 15. 하단 안내
-# ============================================================
+# ==================================================
+# 16. 하단 안내
+# ==================================================
 
 st.divider()
 
 st.caption(
     "🤖 에이블 AI 업무 비서 Pro | "
-    "회의록 분석 · 실시간 대화 · AI 업무 세분화 · "
-    "업무 대시보드 · Google Calendar · 보고서 다운로드"
+    "회의록 분석 · 음성 AI · 업무 세분화 · "
+    "Google Calendar · 보고서 다운로드"
 )
