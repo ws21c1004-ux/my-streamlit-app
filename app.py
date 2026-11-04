@@ -366,36 +366,11 @@ def is_my_task(task):
 def calendar_service():
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
-
-    path = (
-        setting("GOOGLE_SERVICE_ACCOUNT_FILE")
-        or SERVICE_ACCOUNT_FILE
+    path = '/content/drive/MyDrive/project03/service_account.json'
+    credentials = service_account.Credentials.from_service_account_file(
+        path, scopes=['https://www.googleapis.com/auth/calendar']
     )
-
-    if not os.path.isfile(path):
-        raise FileNotFoundError(
-            f"서비스 계정 JSON 파일이 없습니다: {path}"
-        )
-
-    credentials = (
-        service_account.Credentials.from_service_account_file(
-            path,
-            scopes=[
-                "https://www.googleapis.com/auth/calendar"
-            ]
-        )
-    )
-
-    service = build(
-        "calendar",
-        "v3",
-        credentials=credentials,
-        cache_discovery=False
-    )
-
-    return service
-
-
+    return build('calendar', 'v3', credentials=credentials, cache_discovery=False)
 def calendar_id():
     cid = (
         st.session_state.get("calendar_id_input", "").strip()
@@ -866,8 +841,7 @@ with st.sidebar:
             st.error(f"연결 실패: {error}")
 
     if os.path.isfile(
-        setting("GOOGLE_SERVICE_ACCOUNT_FILE")
-        or SERVICE_ACCOUNT_FILE
+        "/content/drive/MyDrive/project03/service_account.json"
     ):
         st.success("서비스 계정 JSON 파일 확인됨")
     else:
