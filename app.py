@@ -2409,10 +2409,13 @@ if page == PAGES[5]:
 # ══════════════════════════════════════════════════
 elif page == PAGES[6]:
     st.subheader("🗂️ 회의 자료실")
-   
 
     archives = st.session_state.archived_meetings
-      pass
+
+    if not archives:
+        pass
+    else:
+        st.markdown(f"**총 보존 회의록:** `{len(archives)}건`"
     else:
         st.markdown(f"**총 보존 회의록:** `{len(archives)}건`")
         # ====================================================
