@@ -2415,8 +2415,6 @@ elif page == PAGES[6]:
     if not archives:
         pass
     else:
-        st.markdown(f"**총 보존 회의록:** `{len(archives)}건`"
-    else:
         st.markdown(f"**총 보존 회의록:** `{len(archives)}건`")
         # ====================================================
         # 회의 자료실: 문서 조회 / 불러오기 / 2단계 삭제
