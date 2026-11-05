@@ -3459,3 +3459,44 @@ elif page == PAGES[6]:
                                 st.success("문서가 삭제되었습니다.")
 
                                 st.rerun()
+ 
+# 통합 app.py 업로드 및 실행
+from google.colab import files
+import os
+import subprocess
+
+# 1. 통합 파일 업로드
+uploaded = files.upload()
+
+# 2. app.py로 저장
+filename = next(iter(uploaded))
+os.replace(filename, "/content/app.py")
+
+# 3. 문법 검사
+subprocess.run(
+    ["python", "-m", "py_compile", "/content/app.py"],
+    check=True
+)
+
+print("✅ 통합 app.py 준비 완료!")
+
+# 4. 기존 Streamlit 종료 후 재실행
+subprocess.run(
+    ["pkill", "-f", "streamlit run"],
+    check=False
+)
+
+log = open("/content/streamlit.log", "w")
+process = subprocess.Popen(
+    [
+        "streamlit", "run", "/content/app.py",
+        "--server.port", "8501",
+        "--server.address", "0.0.0.0"
+    ],
+    stdout=log,
+    stderr=subprocess.STDOUT
+)
+
+print("✅ Streamlit 실행 요청 완료!")
+print("기존에 사용하던 접속 링크에서 새로고침하세요.")
+
