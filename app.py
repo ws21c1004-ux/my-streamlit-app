@@ -2409,14 +2409,10 @@ if page == PAGES[5]:
 # ══════════════════════════════════════════════════
 elif page == PAGES[6]:
     st.subheader("🗂️ 회의 자료실")
-    st.caption(
-        "업로드한 회의록을 조회하고, "
-        "현재 작업 문서로 불러오거나 삭제할 수 있습니다."
-    )
+   
 
     archives = st.session_state.archived_meetings
-    if not archives:
-        st.info("아직 저장된 회의 자가 없습니다.")
+      pass
     else:
         st.markdown(f"**총 보존 회의록:** `{len(archives)}건`")
         # ====================================================
