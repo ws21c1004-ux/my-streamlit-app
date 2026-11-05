@@ -3728,3 +3728,142 @@ elif page == PAGES[6]:
                        file_name="able_tasks.csv", mime="text/csv", use_container_width=True)
     with st.expander("보고서 미리보기"):
         st.markdown(_report)
+
+# ============================================================
+# 회의 자료실 - 업무 보고서 다운로드 기능
+# 기존 메뉴와 충돌하지 않는 독립 함수
+# ============================================================
+
+def render_meeting_report_download():
+    import streamlit as st
+    import pandas as pd
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    st.divider()
+    st.subheader("📥 업무 보고서 다운로드")
+    st.caption(
+        "현재 선택한 회의록과 업무 우선순위 분석 결과를 다운로드합니다."
+    )
+
+    # 1. 현재 선택된 회의록
+    doc_name = st.session_state.get("active_doc", "")
+    uploaded_docs = st.session_state.get("uploaded_docs", {})
+
+    meeting_text = uploaded_docs.get(doc_name, "")
+
+    # 2. 업무 우선순위 분석 결과
+    priority_data = (
+        st.session_state.get(f"priority_data_{doc_name}")
+        if doc_name else None
+    )
+
+    tasks = []
+
+    if isinstance(priority_data, dict):
+        tasks = priority_data.get("업무목록", [])
+    elif isinstance(priority_data, list):
+        tasks = priority_data
+
+    if not isinstance(tasks, list):
+        tasks = []
+
+    # 3. CSV 데이터 생성
+    df = pd.DataFrame(tasks)
+
+    columns = [
+        "업무명",
+        "담당자",
+        "기한",
+        "긴급도",
+        "중요도",
+        "근거"
+    ]
+
+    for col in columns:
+        if col not in df.columns:
+            df[col] = ""
+
+    df = df[columns].copy()
+
+    # 4. 우선순위 계산
+    def priority_label(urgent, important):
+        try:
+            return classify(urgent, important)
+        except (NameError, ValueError, TypeError, KeyError):
+            return "미분류"
+
+    if not df.empty:
+        df["우선순위"] = df.apply(
+            lambda row: priority_label(
+                row["긴급도"],
+                row["중요도"]
+            ),
+            axis=1
+        )
+    else:
+        df["우선순위"] = pd.Series(dtype=str)
+
+    # 5. 보고서 생성일
+    now = datetime.now(
+        ZoneInfo("Asia/Seoul")
+    ).strftime("%Y-%m-%d %H:%M:%S")
+
+    # 6. Markdown 보고서 생성
+    report_lines = [
+        "# 에이블 AI 업무 보고서",
+        "",
+        f"- 생성일: {now}",
+        f"- 회의 문서: {doc_name or '선택 없음'}",
+        "",
+        "## 1. 회의록",
+        "",
+        meeting_text or "회의록이 없습니다.",
+        "",
+        "## 2. 업무 목록",
+        ""
+    ]
+
+    if df.empty:
+        report_lines.append(
+            "분석된 업무가 없습니다. "
+            "업무 우선순위 분석을 먼저 실행하세요."
+        )
+    else:
+        for _, row in df.iterrows():
+            report_lines.extend([
+                f"### {row['업무명']}",
+                f"- 담당자: {row['담당자'] or '미기재'}",
+                f"- 마감일: {row['기한'] or '기한 미정'}",
+                f"- 우선순위: {row['우선순위']}",
+                f"- 근거: {row['근거']}",
+                ""
+            ])
+
+    report_text = "\n".join(report_lines)
+
+    # 7. Markdown 다운로드
+    st.download_button(
+        label="📄 Markdown 업무 보고서 다운로드",
+        data=report_text.encode("utf-8-sig"),
+        file_name="able_work_report.md",
+        mime="text/markdown",
+        use_container_width=True
+    )
+
+    # 8. CSV 다운로드
+    csv_data = df.to_csv(
+        index=False
+    ).encode("utf-8-sig")
+
+    st.download_button(
+        label="📊 CSV 업무 목록 다운로드",
+        data=csv_data,
+        file_name="able_tasks.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+    # 9. 보고서 미리보기
+    with st.expander("보고서 미리보기"):
+        st.markdown(report_text)
