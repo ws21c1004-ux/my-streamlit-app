@@ -3867,3 +3867,44 @@ def render_meeting_report_download():
     # 9. 보고서 미리보기
     with st.expander("보고서 미리보기"):
         st.markdown(report_text)
+
+
+from pathlib import Path
+import shutil
+import py_compile
+
+path = Path("/content/app.py")
+
+if not path.exists():
+    raise FileNotFoundError("app.py 파일이 없습니다.")
+
+# 원본 백업
+backup = Path("/content/app_backup.py")
+shutil.copy2(path, backup)
+
+code = path.read_text(encoding="utf-8")
+
+# 이전에 잘못 추가된 Colab 실행 코드 시작점
+marker = "# 통합 app.py 업로드 및 실행"
+
+if marker in code:
+    code = code.split(marker, 1)[0]
+
+    # 앞에 남은 주석 및 빈 줄 정리
+    code = code.rstrip() + "\n"
+
+    path.write_text(code, encoding="utf-8")
+
+    print("✅ 잘못 추가된 실행 코드 제거 완료")
+else:
+    print("⚠️ 제거할 코드 시작점을 찾지 못했습니다.")
+
+# 문법 검사
+try:
+    py_compile.compile(str(path), doraise=True)
+    print("✅ 문법 검사 통과")
+except py_compile.PyCompileError as e:
+    print("❌ 아직 문법 오류가 있습니다.")
+    print(e)
+
+print("백업 파일:", backup)
