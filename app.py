@@ -31,7 +31,6 @@ from pypdf import PdfReader
 from docx import Document
 
 import pandas as pd
-import altair as alt
 import streamlit as st
 from openai import OpenAI
 from email.mime.text import MIMEText
@@ -73,7 +72,7 @@ PAGE_INFO = {
     ],
     "📊 업무 우선순위 분석": [
         "📊 김 대리 업무를 **긴급도 × 중요도**로 나눠 Q1 즉시 착수부터 Q4 후순위 검토까지 **4개 영역**으로 정리합니다.",
-        "🔗 먼저 끝내야 하는 업무를 **선행관계**로 짚어 드리고, 마케팅 **예산 지출 내역**을 그래프로 보여 드립니다.",
+        "🔗 먼저 끝내야 하는 업무를 **선행관계**로 짚어 드리고, 순서를 정할 때 참고할 **판단 근거**도 함께 보여 드립니다.",
     ],
     "📅 마감 캘린더": [
         "📅 '다음 주까지' 같은 회의 표현을 **날짜로 계산**해 마감일과 D-14·D-7·D-1 알림을 **달력**에 표시합니다.",
@@ -100,7 +99,28 @@ PAGE_INFO = {
 # 대화 기록 최대 개수 (질문 1 + 답변 1 = 2개 → 20이면 최근 10번의 대화)
 MAX_HISTORY = 20
 
-# 주석 추가 ~~~
+
+# 메뉴 바로가기: 질문에 이 단어가 들어 있으면 해당 메뉴로 가는 버튼을 보여 줌
+#  - 음성 인식은 띄어쓰기가 달라질 수 있어서 띄어쓰기를 없앤 단어로 비교
+PAGE_KEYWORDS = {
+    "📊 업무 우선순위 분석": ["우선순위"],
+    "📅 마감 캘린더":       ["마감캘린더", "캘린더", "달력"],
+    "📨 팔로업 메일":       ["팔로업", "팔로우업"],
+    "🎧 출근길 브리핑":     ["출근길", "브리핑"],
+    "🍃 오늘의 할 일":      ["오늘의할일", "할일", "칸반"],
+    "🗂️ 회의 자료실":       ["회의자료실", "자료실"],
+}
+
+def find_pages(text):
+    """질문에서 메뉴 이름(키워드)을 찾아, 찾은 메뉴 목록을 메뉴 순서대로 반환"""
+    q = text.replace(" ", "")
+    return [p for p in PAGES if any(word in q for word in PAGE_KEYWORDS.get(p, []))]
+
+def go_page(target):
+    """바로가기 버튼: 사이드바 메뉴 값을 바꿔서 그 메뉴로 이동"""
+    st.session_state.menu = target
+    st.session_state.jump_pages = []      # 이동했으면 버튼은 지움
+
 def kst_today():
     return datetime.now(ZoneInfo("Asia/Seoul")).date()
 
@@ -108,7 +128,7 @@ def kst_now_str():
     return datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
 
 
-# 음성용 텍스트 정리: 마크다운 기호를 빼야 TTS가 매끄럽게 읽음
+# 음성용 텍스트 정리
 def to_speech_text(text):
     text = re.sub(r"[#*`>|]", "", text)              # 제목·굵게 등 기호 제거
     text = re.sub(r"^\s*-\s*", "", text, flags=re.M)  # 줄 앞 목록 기호 '-' 제거
@@ -254,7 +274,7 @@ def ask_able(question, current_meeting):
 # ══════════════════════════════════════════════════
 st.set_page_config(page_title="AI 개인비서 에이블", page_icon="🤖", layout="wide")
 st.title("🤖 AI 개인비서 에이블")
-st.caption("다중 회의록/업무자료 분석, 스마트 캘린더, 실시간 대화 및 지출/목표 대시보드를 제공합니다.")
+st.caption("다중 회의록/업무자료 분석, 스마트 캘린더, 실시간 대화 및 업무 우선순위 분석을 제공합니다.")
 
 # 소개 영역: 자리만 먼저 만들어 두고, 사이드바에서 메뉴가 정해진 뒤 내용을 채움
 #  (메뉴 선택(page)은 아래 사이드바에서 정해지기 때문에, 그 뒤에 이 자리를 채워야 메뉴별 문구를 보여 줄 수 있음)
@@ -531,7 +551,7 @@ def extract_file_content(uploaded_file):
 # 사이드바 메뉴: 누른 메뉴의 기능만 화면에 표시
 with st.sidebar:
     st.header("🤖 에이블 메뉴")
-    page = st.radio("기능 선택", PAGES, label_visibility="collapsed")
+    page = st.radio("기능 선택", PAGES, label_visibility="collapsed", key="menu")
     st.divider()
 
     # 회의록 업로드 (사이드바에 있어서 어느 메뉴에서든 올리고 바꿀 수 있음)
@@ -781,7 +801,7 @@ if page == PAGES[0]:
         if not current_meeting:
             st.info("사이드바에서 문서 파일을 업로드하면 여기서 내용을 볼 수 있습니다.")
         else:
-            with st.expander("문서 원문 미리보기", expanded=True):     # 눌러야 내용이 펼쳐짐
+            with st.expander("문서 원문 미리보기", expanded=True):
                 st.text_area("문서 내용", current_meeting, height=230, label_visibility="collapsed")
 
         st.divider()
@@ -813,6 +833,14 @@ if page == PAGES[0]:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
+        # 질문에 메뉴 이름이 있었으면 바로가기 버튼 표시 (누르면 사이드바를 누르지 않아도 이동)
+        jump_pages = st.session_state.get("jump_pages", [])
+        if jump_pages:
+            st.caption("🔗 질문에 나온 기능으로 바로 가기")
+            for col, target in zip(st.columns(len(jump_pages)), jump_pages):
+                col.button(f"{target} 열기", key=f"jump_{target}", width="stretch",
+                           on_click=go_page, args=(target,))
+
         # 최근 답변 음성 (새 답변일 때만 자동 재생)
         if st.session_state.last_audio:
             st.audio(st.session_state.last_audio, format="audio/mp3",
@@ -829,6 +857,7 @@ if page == PAGES[0]:
             st.session_state.messages_dict[st.session_state.active_doc] = []
             st.session_state.notice = None
             st.session_state.last_audio = None
+            st.session_state.jump_pages = []
             st.rerun()
 
     # ── 질문 처리: 음성(실행 버튼) 또는 텍스트(보내기 버튼) ──
@@ -860,6 +889,7 @@ if page == PAGES[0]:
                 current_history.append({"role": "assistant", "content": answer})
                 st.session_state.messages_dict[st.session_state.active_doc] = current_history[-MAX_HISTORY:]
                 st.session_state.notice = {"source": source, "question": question, "email": email}
+                st.session_state.jump_pages = find_pages(question)   # 질문 속 메뉴 이름 → 바로가기 버튼
 
                 # LLM 최종 응답을 음성으로 즉시 재생 (미션 5·6 TTS)
                 if voice_on:
@@ -1216,120 +1246,6 @@ elif page == PAGES[1]:
         except Exception as e:
             st.error(f"분석 결과 표시 오류: {e}")
 
-    # ----------------------------------------
-    # ④ 마케팅 예산 지출 내역
-    # 목표 진행 상황 표 삭제
-    # 예산 표와 그래프를 화면 전체 너비로 확장
-    # ----------------------------------------
-
-    st.divider()
-
-    st.markdown(
-        "### 💰 마케팅 예산 지출 내역 (총 5,000만 원)"
-    )
-
-    st.caption(
-        "아래 금액은 기존 팀원 코드에 입력된 예산 배분 예시입니다. "
-        "실제 지출 내역과 자동 연동된 데이터는 아닙니다."
-    )
-
-    df_expense = pd.DataFrame({
-        "항목": [
-            "SNS 광고 (인스타/유튜브)",
-            "인플루언서 협업",
-            "숏폼/카드뉴스 제작",
-            "출시 프로모션 이벤트",
-            "예비비"
-        ],
-        "금액(백만원)": [
-            25.0,
-            10.0,
-            8.0,
-            5.0,
-            2.0
-        ]
-    })
-
-    # 예산 비중 자동 계산
-    df_expense["비중(%)"] = (
-        df_expense["금액(백만원)"]
-        / df_expense["금액(백만원)"].sum()
-        * 100
-    ).round(1)
-
-    # 총 예산
-    st.metric(
-        "총 계획 예산",
-        "5,000만 원"
-    )
-    # 예산 표
-    st.dataframe(
-        df_expense[["항목", "금액(백만원)", "비중(%)"]],
-        hide_index=True,
-        use_container_width=True
-    )
-   
-    # 예산 그래프: 0부터 시작하는 눈금 + 금액 표시 + X축 45도
-    df_expense["표시금액"] = df_expense["금액(백만원)"].apply(
-        lambda x: f"{x:g}백만원"
-    )
-
-    x_axis = alt.X(
-        "항목:N",
-        sort=None,
-        axis=alt.Axis(
-            title=None,
-            labelAngle=-45,
-            labelAlign="right",
-            labelLimit=250
-        )
-    )
-
-    y_axis = alt.Y(
-        "금액(백만원):Q",
-        scale=alt.Scale(
-            domain=[0, 30],
-            nice=False
-        ),
-        axis=alt.Axis(
-            title="금액 (백만원)",
-            values=[0, 5, 10, 15, 20, 25, 30]
-        )
-    )
-
-    bars = alt.Chart(df_expense).mark_bar(
-        size=55,
-        cornerRadiusTopLeft=5,
-        cornerRadiusTopRight=5
-    ).encode(
-        x=x_axis,
-        y=y_axis,
-        tooltip=[
-            "항목:N",
-            "금액(백만원):Q",
-            "비중(%):Q"
-        ]
-    )
-
-    labels = alt.Chart(df_expense).mark_text(
-        dy=-12,
-        fontSize=13,
-        fontWeight="bold"
-    ).encode(
-        x=x_axis,
-        y=y_axis,
-        text="표시금액:N"
-    )
-
-    chart = (bars + labels).properties(
-        height=400
-    )
-
-    st.altair_chart(
-        chart,
-        width="stretch"
-    )
-
 # ── 사이드바 아래쪽: 회의록 상태 · 저장된 대화 ──
 with st.sidebar:
     status = "✅" if current_meeting else "⬜"
@@ -1365,137 +1281,6 @@ from difflib import SequenceMatcher
 # 오늘 날짜는 한국 시간 기준 (Streamlit Cloud 서버는 UTC라 date.today()를 쓰면 오전 9시 전엔 하루 전 날짜가 됨)
 def kst_today():
     return datetime.now(ZoneInfo("Asia/Seoul")).date()
-
-
-# [최초 설정: 팀 실습용 서비스 계정 연결]
-# 1) Colab 설치 셀: !pip install -q google-api-python-client google-auth
-# 2) Google Cloud 프로젝트에서 Google Calendar API 사용 설정.
-# 3) 서비스 계정 생성 후 JSON 키를 받아 Colab에 service_account.json으로 업로드.
-#    키 파일은 팀 공유 코드/Git에 넣지 않습니다.
-# 4) Google 캘린더 설정에서 사용할 캘린더를 서비스 계정의 client_email에
-#    '일정 변경' 권한으로 공유. 캘린더 통합 메뉴의 '캘린더 ID' 복사.
-# 5) Streamlit 실행 전에 Colab에서 아래 환경변수 설정:
-#    import os
-#    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/content/service_account.json'
-#    os.environ['GOOGLE_CALENDAR_ID'] = '복사한 캘린더 ID'
-# 6) 기존 기본 app.py 셀 → 이 캘린더 셀 → 팔로업 → 브리핑 순서로 한 번씩 실행.
-# Streamlit Cloud: secrets의 gcal_service_account 표에 JSON 키 필드,
-# GOOGLE_CALENDAR_ID에 캘린더 ID 설정도 지원합니다.
-# 공유한 캘린더에 이 앱 사용자가 쓸 수 있으므로 팀 실습용 비공개 앱에서 사용하세요.
-# 일반 사용자별 Google 로그인은 별도의 OAuth 웹 인증 구성이 필요합니다.
-import os
-import json
-import re
-
-
-def kst_now_str():
-    return datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
-
-
-def able_google_client():
-    from google.oauth2 import service_account
-    from googleapiclient.discovery import build
-    calendar_id = os.getenv('GOOGLE_CALENDAR_ID', '')
-    key_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '')
-    scopes = ['https://www.googleapis.com/auth/calendar.events']
-    if key_path:
-        creds = service_account.Credentials.from_service_account_file(key_path, scopes=scopes)
-    else:
-        try:
-            info = dict(st.secrets['gcal_service_account'])
-        except Exception:
-            raise ValueError('Google 연결 설정이 없습니다. 제공한 코드 상단의 최초 설정을 완료해 주세요.') from None
-        creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
-    if not calendar_id:
-        try:
-            calendar_id = st.secrets['GOOGLE_CALENDAR_ID']
-        except Exception:
-            raise ValueError('GOOGLE_CALENDAR_ID를 설정해 주세요.') from None
-    if calendar_id == 'primary':
-        raise ValueError('서비스 계정에는 공유한 캘린더의 실제 ID를 입력해 주세요.')
-    return build('calendar', 'v3', credentials=creds, cache_discovery=False), calendar_id
-
-
-def able_event_payload(task):
-    due = task['due']
-    description = '\n'.join([
-        task.get('detail', ''),
-        '종류: ' + task.get('kind', ''),
-        '상태: ' + ('완료' if task.get('done') else '미완료'),
-        '원문 기한: ' + (task.get('expr') or '기록에 없음'),
-        '출처: ' + str(task.get('source', '')),
-    ])
-    return {
-        'summary': ('[완료] ' if task.get('done') else '') + task['name'],
-        'description': description,
-        'start': {'date': due.isoformat()},
-        'end': {'date': (due + timedelta(days=1)).isoformat()},
-        'extendedProperties': {'private': {'able_task_id': task['task_id']}},
-    }
-
-
-def able_sync_google(tasks, service, calendar_id):
-    """한 버튼으로 일괄 처리. 성공한 업무는 유지하고 실패 항목은 별도로 보고."""
-    report = []
-    for task in tasks:
-        if task.get('due') is None or not task.get('use'):
-            continue
-        # 동일 task_id 재시도는 새 이벤트를 만들지 않고 기존 이벤트를 갱신.
-        event_id = 'able' + hashlib.sha256(task['task_id'].encode()).hexdigest()
-        body = able_event_payload(task)
-        try:
-            try:
-                result = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
-            except Exception as exc:
-                if getattr(getattr(exc, 'resp', None), 'status', None) != 404:
-                    raise
-                try:
-                    result = service.events().insert(calendarId=calendar_id,
-                        body={**body, 'id': event_id}, sendUpdates='none').execute()
-                    action = '등록'
-                except Exception as conflict:
-                    if getattr(getattr(conflict, 'resp', None), 'status', None) != 409:
-                        raise
-                    result = service.events().patch(calendarId=calendar_id, eventId=event_id,
-                        body=body, sendUpdates='none').execute()
-                    action = '수정'
-            else:
-                if result.get('status') == 'cancelled':
-                    raise ValueError('Google에서 삭제한 일정입니다. 새 업무로 등록해 주세요.')
-                result = service.events().patch(calendarId=calendar_id, eventId=event_id,
-                    body=body, sendUpdates='none').execute()
-                action = '수정'
-            task['google_event_id'] = result['id']
-            task['google_synced_at'] = kst_now_str()
-            report.append({'업무': task['name'], '결과': action + ' 완료', '오류': ''})
-        except Exception as exc:
-            code = getattr(getattr(exc, 'resp', None), 'status', None)
-            reason = {401:'인증 만료 또는 인증 오류',403:'Calendar API 사용 설정·공유 권한을 확인하세요',
-                      404:'캘린더 ID 또는 공유 설정을 확인하세요',429:'요청 제한: 잠시 후 다시 시도하세요'}.get(code)
-            report.append({'업무':task['name'],'결과':'실패',
-                           '오류':reason or (str(exc) if isinstance(exc, ValueError) else '연결 오류: 다시 시도해 주세요')})
-    return report
-
-
-def able_run_sync():
-    candidates = [t for t in st.session_state.schedule if t.get('due') is not None and t.get('use')]
-    if not candidates:
-        st.warning('날짜를 정하고 달력 표시를 켠 업무가 없습니다.')
-        return
-    try:
-        service, calendar_id = able_google_client()
-        try:
-            with st.spinner(f'{len(candidates)}개 업무를 Google 캘린더에 저장하고 있습니다…'):
-                report = able_sync_google(candidates, service, calendar_id)
-        finally:
-            service.close()
-        st.session_state.able_google_report = report
-    except ImportError:
-        st.session_state.able_google_report = [{'업무':'연결','결과':'실패','오류':'google-api-python-client와 google-auth를 설치해 주세요.'}]
-    except Exception as exc:
-        st.session_state.able_google_report = [{'업무':'연결','결과':'실패',
-            '오류':str(exc) if isinstance(exc, ValueError) else 'Google 연결 설정을 확인해 주세요.'}]
-
 
 # ── ① 일정 추출용 출력 스키마 (05 실습 JSON 구조화) ──
 schedule_schema = {
@@ -2165,43 +1950,26 @@ if page == PAGES[2]:
     if not schedule:
         st.info("회의록을 업로드한 뒤 '회의록에서 일정 추출'을 눌러 주세요.")
     else:
-        # 모든 업무는 기한 유무와 무관하게 여기에서 편집합니다.
-        for task in schedule:
-            task.setdefault("task_id", create_task_id())
-        with st.expander("✏️ 전체 업무 수정 · 날짜 미정 업무에 날짜 지정", expanded=True):
-            st.caption("마감일은 빈칸에서도 선택할 수 있습니다. 수정 후 아래 저장 버튼을 누르세요.")
-            with st.form(f"able_schedule_editor_{ver}"):
-                edits = []
-                for it in schedule:
-                    ident = f"able_edit_{ver}_{it['task_id']}"
-                    st.markdown(f"**{it['name']}**")
-                    st.caption(f"원문 기한: {it.get('expr') or '기록에 없음'}")
-                    name = st.text_input("업무명", value=it['name'], key=ident+'_name')
-                    detail = st.text_area("일정 내용", value=it.get('detail', ''), key=ident+'_detail', height=80)
-                    c1, c2, c3 = st.columns([2, 1, 1])
-                    due = c1.date_input("마감일 (날짜 미정이면 비워두세요)", value=it.get('due'), key=ident+'_due')
-                    # 날짜가 없었던 업무는 날짜 지정 후 바로 달력에 표시되도록 기본 체크.
-                    use = c2.checkbox("달력 표시", value=it.get('use', False) or it.get('due') is None, key=ident+'_use')
-                    done = c3.checkbox("완료", value=it.get('done', False), key=ident+'_done')
-                    edits.append((it, name.strip(), detail, due, use, done))
-                    st.divider()
-                local_save = st.form_submit_button("수정 내용 저장")
-                google_save = st.form_submit_button("수정 저장 + Google 캘린더 전체 등록·수정", type="primary")
-                if local_save or google_save:
-                    if any(not name for _, name, _, _, _, _ in edits):
-                        st.error("업무명을 비워둘 수 없습니다.")
-                    else:
-                        for it, name, detail, due, use, done in edits:
-                            if due != it.get('due'):
-                                update_task_history(it, due, kst_today(), "Streamlit에서 직접 수정")
-                            it.update(name=name, detail=detail, due=due, use=bool(use and due is not None), done=done)
-                        if google_save:
-                            able_run_sync()
-                        st.session_state.sched_ver += 1
-                        st.rerun()
+        # ② 일정 확인 및 수정 (고친 값은 일정 목록에 바로 저장 → 메뉴를 옮겨도 유지)
+        with st.expander("✏️ 일정 확인 및 수정 (날짜 정하기 · 완료 표시)"):
+            st.caption("기한이 없거나 애매한 일정은 날짜를 정한 뒤 '달력 표시'를 체크하세요.")
+            for i, it in enumerate(schedule):
+                a, b, c, d = st.columns([1, 3, 2, 1], vertical_alignment="center")
+                it["use"] = a.checkbox("달력 표시", value=it["use"], key=f"use_{ver}_{i}")
+                b.markdown(f"**{it['name']}** ({it['kind']})  \n<small>출처: {it.get('source', '알 수 없음')}</small>", unsafe_allow_html=True)
+                # 기한 미정 업무는 회의일 또는 오늘을 입력창의 초기값으로 제안
+                # 제안값은 확정 마감일이 아니며 사용자가 직접 확인해야 함
+                initial_due = it["due"] or it.get("meeting_date") or kst_today()
+
+                it["due"] = c.date_input(
+                    "마감일",
+                    value=initial_due,
+                    key=f"due_{ver}_{i}"
+                )
+                it["done"] = d.checkbox("완료", value=it["done"], key=f"done_{ver}_{i}")
 
         today = kst_today()
-        active = [it for it in schedule if it["use"] and it.get("due") is not None]
+        active = [it for it in schedule if it["use"]]
 
         # 날짜별 마감 업무 / 마일스톤 모으기
         due_map, ms_map, rows = {}, {}, []
@@ -2284,7 +2052,7 @@ if page == PAGES[2]:
             st.caption("완료 여부는 위의 '일정 확인 및 수정'에서 변경할 수 있습니다.")
 
         # ⑥ 기한 미정 업무
-        undecided = [it for it in schedule if it.get("due") is None]
+        undecided = [it for it in schedule if not it["use"]]
         with st.expander(f"⚪ 기한 미정 업무 {len(undecided)}건"):
             if not undecided:
                 st.write("기한 미정 업무가 없습니다.")
@@ -2301,26 +2069,138 @@ if page == PAGES[2]:
                                file_name="able_schedule.ics", mime="text/calendar",
                                type="primary", use_container_width=True)
             st.caption(f"마일스톤 {len(rows)}개(D-14, D-7, D-1, D-day)가 담깁니다. "
-                       "파일 가져오기 방식입니다. 직접 일괄 저장은 아래 Google 연동을 사용하세요.")
+                       "파일을 열면 Google·Outlook·휴대폰 캘린더에 바로 등록됩니다.")
     # ============================================================
-    # Google Calendar API로 직접 일괄 등록·수정
+    # 외부 캘린더 연동 (마감 캘린더 메뉴 전용)
+    # ============================================================
+    # 기능:
+    # 1. 등록된 업무 중 캘린더에 추가할 업무 선택
+    # 2. Google Calendar 일정 등록 화면 열기
+    # 3. Outlook Calendar 일정 등록 화면 열기
+    # 4. 업무명 및 마감일 자동 입력
+    # 5. 사용자 확인 후 외부 캘린더에 저장
+    #
+    # 주의:
+    # 기존 업무 데이터와 .ics 다운로드 기능은 변경하지 않음
+    # ============================================================
+
+    from urllib.parse import urlencode
+
     st.divider()
-    st.subheader("🔗 Google 캘린더 일괄 저장")
-    target = [t for t in st.session_state.schedule if t.get('due') is not None and t.get('use')]
-    st.caption(f"저장 대상: {len(target)}건 · 날짜가 있고 달력 표시가 켜진 업무 (완료 업무 포함)")
-    st.caption("편집 중인 내용까지 보내려면 위의 ‘수정 저장 + Google 캘린더 전체 등록·수정’을 누르세요. 같은 업무를 다시 저장하면 Google의 기존 일정을 갱신합니다.")
-    st.caption("날짜 미정·표시 해제 업무는 전송하지 않습니다. 이미 Google에 등록한 일정을 자동 삭제하지는 않습니다. 사전 점검 일정은 이 버튼의 전송 대상이 아닙니다.")
-    if st.button("저장된 업무 전체를 Google 캘린더에 등록·수정", key="able_google_all", disabled=not target):
-        able_run_sync()
-    report = st.session_state.get('able_google_report')
-    if report:
-        failed = sum(r['결과'] == '실패' for r in report)
-        if failed:
-            st.warning(f"최근 전송 결과: 성공 {len(report)-failed}건 / 실패 {failed}건. 실패 원인을 확인한 뒤 다시 저장하세요.")
-        else:
-            st.success(f"최근 전송 결과: {len(report)}건을 Google 캘린더에 저장했습니다.")
-        st.dataframe(report, hide_index=True)
-    st.caption("계정 연결 전에는 코드 상단의 최초 설정을 완료해 주세요. Streamlit 세션이 초기화되면 업무 ID도 사라질 수 있으므로 업무 데이터의 영구 저장은 별도로 필요합니다.")
+    st.subheader("🔗 외부 캘린더 연동")
+
+    st.caption(
+        "업무를 선택하면 해당 업무명과 마감일이 입력된 "
+        "Google·Outlook 캘린더 화면으로 이동합니다."
+    )
+
+    # 1. 마감일이 확정된 업무만 선택 목록에 표시
+    calendar_tasks = [
+        task
+        for task in st.session_state.schedule
+        if task.get("due") is not None
+        and task.get("use", False)
+    ]
+
+    if calendar_tasks:
+
+        # 2. 캘린더에 등록할 업무 선택
+        selected_index = st.selectbox(
+            "📌 캘린더에 등록할 업무",
+            range(len(calendar_tasks)),
+            format_func=lambda i: (
+                f"{calendar_tasks[i]['name']} "
+                f"(마감: {calendar_tasks[i]['due']})"
+            ),
+            key="external_calendar_task"
+        )
+
+        selected_task = calendar_tasks[selected_index]
+
+        # 3. 선택한 업무 정보 가져오기
+        task_name = selected_task["name"]
+        task_due = selected_task["due"]
+
+        # 날짜를 YYYY-MM-DD 형식으로 변환
+        if isinstance(task_due, str):
+            task_due = date.fromisoformat(task_due[:10])
+
+        # 외부 캘린더에는 종일 일정으로 등록
+        start_date = task_due
+        end_date = task_due + timedelta(days=1)
+
+        # 4. 일정 상세 설명
+        task_description = (
+            f"업무명: {task_name}\n"
+            f"업무 구분: {selected_task.get('kind', '미정')}\n"
+            f"회의록: {selected_task.get('source', '미정')}\n"
+            f"회의일: {selected_task.get('meeting_date', '미정')}"
+        )
+
+        # ====================================================
+        # Google Calendar 등록 링크
+        # ====================================================
+        google_params = {
+            "action": "TEMPLATE",
+            "text": task_name,
+            "dates": (
+                f"{start_date:%Y%m%d}/"
+                f"{end_date:%Y%m%d}"
+            ),
+            "details": task_description
+        }
+
+        google_url = (
+            "https://calendar.google.com/calendar/render?"
+            + urlencode(google_params)
+        )
+
+        # ====================================================
+        # Outlook Calendar 등록 링크
+        # ====================================================
+        outlook_params = {
+            "path": "/calendar/action/compose",
+            "rru": "addevent",
+            "subject": task_name,
+            "startdt": start_date.isoformat(),
+            "enddt": end_date.isoformat(),
+            "allday": "true",
+            "body": task_description
+        }
+
+        outlook_url = (
+            "https://outlook.live.com/calendar/0/"
+            "deeplink/compose?"
+            + urlencode(outlook_params)
+        )
+
+        # 5. 외부 캘린더 연결 버튼
+        col_google, col_outlook = st.columns(2)
+
+        with col_google:
+            st.link_button(
+                "🔵 Google Calendar에 등록",
+                google_url,
+                use_container_width=True
+            )
+
+        with col_outlook:
+            st.link_button(
+                "🟣 Outlook Calendar에 등록",
+                outlook_url,
+                use_container_width=True
+            )
+
+        st.info(
+            "📅 외부 캘린더에서 일정 내용을 확인하거나 "
+            "수정한 후 저장해 주세요."
+        )
+
+    else:
+        st.info(
+            "마감일이 확정된 업무가 없습니다. "
+            "업무 일정을 먼저 등록해 주세요."
+        )
 
 # ══════════════════════════════════════════════════════════════
 # 메뉴 4: 팔로업 메일 초안 자동 생성 & 원클릭 승인
@@ -2484,7 +2364,6 @@ if page == PAGES[3]:
         if d.get("sent"):
             st.caption(f"📧 최근 발송 주소: {d['sent']}")
 
-#수정 : 이부분은 삭제할지 말지 &^^^^^
         if d.get("logs"):
             with st.expander("이 메일의 발송 이력"):
                 for log in d["logs"]:
@@ -2524,7 +2403,7 @@ if page == PAGES[4]:
 
     voice = st.selectbox("목소리", ["nova", "alloy", "shimmer", "onyx"], key="br_voice")
 
-    if st.button("브리핑 생성", type="primary"): # 수정 : key="br_make" 삭제해도 되겠지...?
+    if st.button("브리핑 생성", type="primary"):
         if not current_meeting:
             st.warning("먼저 사이드바에서 회의록 파일을 업로드해 주세요.")
         else:
@@ -2543,7 +2422,6 @@ if page == PAGES[4]:
 
                     response = client.responses.create(
                         model="gpt-4o-mini",
-# 수정 : 아래 들여쓰기 검증해야 함.
     input=[
         {
             "role": "system",
@@ -2628,7 +2506,6 @@ if page == PAGES[4]:
 #  - 업무 목록은 '📅 마감 캘린더'에서 추출한 일정(st.session_state.schedule)을 그대로 사용
 #  - 진행 상태(status)는 업무마다 저장: 처음 추출하면 모두 TO DO (회의에서 막 배정된 업무라 시작 전)
 #  - DONE으로 옮기면 캘린더의 완료(✅)에도 바로 반영되고, 캘린더에서 완료를 체크해도 DONE에 표시됨
-#  - ⚠️ 아래 '회의 자료실' 셀이 elif로 이어지므로, 이 셀의 마지막 문장은 반드시 if page == PAGES[5]: 블록이어야 함
 # ══════════════════════════════════════════════════════════════
 
 KANBAN_COLUMNS = [
