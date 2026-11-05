@@ -3621,7 +3621,7 @@ except Exception:
 print("\n수정 완료! Streamlit을 재실행하세요.")
 
 
-elif page == PAGES[6]:
+if page == PAGES[6]:
     st.subheader("🗂️ 회의 자료실")
 
     archives = st.session_state.archived_meetings
