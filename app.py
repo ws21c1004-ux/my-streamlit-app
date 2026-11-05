@@ -3343,3 +3343,141 @@ elif page == PAGES[6]:
                        file_name="able_tasks.csv", mime="text/csv", use_container_width=True)
     with st.expander("보고서 미리보기"):
         st.markdown(_report)
+
+
+# ============================================================
+# 에이블 AI 업무 비서 - 다운로드 버튼 중복 오류 자동 수정
+# Google Colab에서 이 셀 하나만 실행
+# ============================================================
+
+from pathlib import Path
+import ast
+import shutil
+import py_compile
+
+APP_PATH = Path("/content/app.py")
+BACKUP_PATH = Path("/content/app_before_button_fix.py")
+
+if not APP_PATH.exists():
+    raise FileNotFoundError(
+        "app.py 파일이 없습니다. 먼저 기존 app.py 생성 셀을 실행하세요."
+    )
+
+# 1. 기존 파일 백업
+shutil.copy2(APP_PATH, BACKUP_PATH)
+
+code = APP_PATH.read_text(encoding="utf-8")
+lines = code.splitlines(keepends=True)
+
+# 2. 기존 파이썬 코드 분석
+tree = ast.parse(code)
+
+targets = {
+    "📄 Markdown 업무 보고서 다운로드":
+        "able_archive_markdown_download",
+    "📊 CSV 업무 목록 다운로드":
+        "able_archive_csv_download"
+}
+
+changes = []
+counts = {}
+
+# 3. 다운로드 버튼 위치 찾기
+for node in ast.walk(tree):
+
+    if not isinstance(node, ast.Call):
+        continue
+
+    if not isinstance(node.func, ast.Attribute):
+        continue
+
+    if node.func.attr != "download_button":
+        continue
+
+    label = None
+
+    if node.args:
+        first = node.args[0]
+        if isinstance(first, ast.Constant):
+            label = first.value
+
+    for kw in node.keywords:
+        if kw.arg == "label" and isinstance(
+            kw.value, ast.Constant
+        ):
+            label = kw.value.value
+
+    if label not in targets:
+        continue
+
+    # 이미 key가 있으면 중복 추가하지 않음
+    if any(kw.arg == "key" for kw in node.keywords):
+        continue
+
+    counts[label] = counts.get(label, 0) + 1
+
+    # 동일 버튼이 여러 위치에 있어도 고유 key 사용
+    unique_key = (
+        f"{targets[label]}_{node.lineno}"
+    )
+
+    # 닫는 괄호 앞에 key 삽입
+    end_line = node.end_lineno - 1
+    end_col = node.end_col_offset
+
+    changes.append(
+        (end_line, end_col, unique_key)
+    )
+
+# 4. 뒤쪽부터 수정하여 위치 충돌 방지
+for line_idx, end_col, key in sorted(
+    changes, reverse=True
+):
+    line = lines[line_idx]
+
+    # UTF-8 바이트 오프셋 기준
+    encoded = line.encode("utf-8")
+
+    before = encoded[:end_col - 1]
+    after = encoded[end_col - 1:]
+
+    # 마지막 닫는 괄호 앞에 인자 추가
+    prefix = before.rstrip()
+
+    separator = (
+        ""
+        if prefix.endswith(b"(")
+        else ", "
+    )
+
+    updated = (
+        prefix
+        + separator
+        + f'key="{key}"'.encode("utf-8")
+        + after
+    )
+
+    lines[line_idx] = updated.decode("utf-8")
+
+# 5. 저장 및 문법 검사
+new_code = "".join(lines)
+
+try:
+    ast.parse(new_code)
+    APP_PATH.write_text(new_code, encoding="utf-8")
+
+    py_compile.compile(
+        str(APP_PATH),
+        doraise=True
+    )
+
+    print("✅ 코드 문법 검사 통과")
+    print(f"✅ 수정된 버튼: {len(changes)}개")
+    print(f"✅ 백업 파일: {BACKUP_PATH}")
+
+except Exception:
+    shutil.copy2(BACKUP_PATH, APP_PATH)
+    print("❌ 수정 실패 - 기존 파일 복원 완료")
+    raise
+
+print("\n수정 완료! Streamlit을 재실행하세요.")
