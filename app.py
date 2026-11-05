@@ -2544,3 +2544,613 @@ elif page == PAGES[6]:
                                 st.success("문서가 삭제되었습니다.")
 
                                 st.rerun()
+
+# ══════════════════════════════════════════════════
+# 메뉴 7: 🗂️ 회의 자료실 + 업무 보고서 다운로드
+# ══════════════════════════════════════════════════
+elif page == PAGES[6]:
+
+    import uuid
+    import pandas as pd
+    from datetime import datetime
+    from io import StringIO
+
+    st.subheader("🗂️ 회의 자료실")
+
+    st.caption(
+        "업로드한 회의록을 조회하고, "
+        "현재 작업 문서로 불러오거나 "
+        "업무 보고서를 다운로드할 수 있습니다."
+    )
+
+    # 세션 상태 초기화
+    if "archived_meetings" not in st.session_state:
+        st.session_state.archived_meetings = []
+
+    if "uploaded_docs" not in st.session_state:
+        st.session_state.uploaded_docs = {}
+
+    if "active_doc" not in st.session_state:
+        st.session_state.active_doc = ""
+
+    if "delete_target" not in st.session_state:
+        st.session_state.delete_target = None
+
+    archives = st.session_state.archived_meetings
+
+    # =============================================
+    # 보고서 생성 함수
+    # =============================================
+
+    def make_archive_report(item):
+
+        title = item.get("title", "회의록")
+        content = item.get("content", "")
+        saved_time = item.get("time", "미정")
+
+        tasks = item.get("tasks", [])
+
+        report = f"""# 📋 에이블 AI 업무 보고서
+
+## 1. 회의 정보
+
+- 회의명: {title}
+- 등록 시각: {saved_time}
+- 보고서 생성일: {datetime.now().strftime("%Y-%m-%d")}
+
+## 2. 회의 내용
+
+{content}
+
+## 3. 담당 업무
+
+"""
+
+        if tasks:
+
+            for i, task in enumerate(tasks, 1):
+
+                report += (
+                    f"### {i}. {task.get('업무명', '업무 없음')}\n\n"
+                    f"- 담당자: {task.get('담당자', '미정')}\n"
+                    f"- 마감일: {task.get('마감일', '미정')}\n"
+                    f"- 우선순위: {task.get('우선순위', '미정')}\n"
+                    f"- 세부 작업: {task.get('세부작업', '없음')}\n\n"
+                )
+
+        else:
+            report += "추출된 업무 정보가 없습니다.\n"
+
+        return report
+
+    # =============================================
+    # 회의 자료실
+    # =============================================
+
+    if not archives:
+
+        st.info("아직 저장된 회의 자료가 없습니다.")
+
+    else:
+
+        st.markdown(
+            f"**총 보존 회의록:** `{len(archives)}건`"
+        )
+
+        for idx, item in enumerate(reversed(archives), 1):
+
+            # 문서 고유 ID 생성
+            if "document_id" not in item:
+                item["document_id"] = str(uuid.uuid4())
+
+            document_id = item["document_id"]
+
+            title = item.get("title", "제목 없음")
+            saved_time = item.get("time", "시간 미정")
+            content = item.get("content", "")
+
+            with st.expander(
+                f"🕒 [{saved_time}] {title}",
+                expanded=(idx == 1)
+            ):
+
+                # =================================
+                # 1. 회의록 원문 조회
+                # =================================
+
+                st.markdown("### 📄 회의록 원문")
+
+                st.caption(
+                    f"등록 시각: {saved_time}"
+                )
+
+                st.text_area(
+                    "회의록 내용",
+                    value=content,
+                    height=200,
+                    key=f"arc_view_{document_id}"
+                )
+
+                # =================================
+                # 2. 현재 작업 문서로 불러오기
+                # =================================
+
+                if st.button(
+                    "📥 이 문서를 현재 작업 문서로 다시 불러오기",
+                    key=f"restore_{document_id}",
+                    use_container_width=True
+                ):
+
+                    st.session_state.uploaded_docs[
+                        title
+                    ] = content
+
+                    st.session_state.active_doc = title
+
+                    st.success(
+                        f"'{title}' 문서를 불러왔습니다!"
+                    )
+
+                    st.rerun()
+
+                st.divider()
+
+                # =================================
+                # 3. 업무 보고서 다운로드
+                # =================================
+
+                st.markdown("### 📥 업무 보고서 다운로드")
+
+                st.caption(
+                    "회의 내용, 담당자, 마감일, "
+                    "업무 우선순위 및 세부 작업을 "
+                    "포함합니다."
+                )
+
+                report = make_archive_report(item)
+
+                # Markdown 보고서 다운로드
+                st.download_button(
+                    label="📄 Markdown 업무 보고서 다운로드",
+                    data=report,
+                    file_name=f"AIVLE_report_{document_id}.md",
+                    mime="text/markdown",
+                    key=f"md_download_{document_id}",
+                    use_container_width=True
+                )
+
+                # CSV 업무 목록 생성
+                tasks = item.get("tasks", [])
+
+                columns = [
+                    "업무명",
+                    "담당자",
+                    "마감일",
+                    "우선순위",
+                    "세부작업"
+                ]
+
+                if tasks:
+                    df = pd.DataFrame(tasks)
+                    df = df.reindex(columns=columns)
+                else:
+                    df = pd.DataFrame(columns=columns)
+
+                csv_data = df.to_csv(
+                    index=False
+                ).encode("utf-8-sig")
+
+                st.download_button(
+                    label="📊 CSV 업무 목록 다운로드",
+                    data=csv_data,
+                    file_name=f"AIVLE_tasks_{document_id}.csv",
+                    mime="text/csv",
+                    key=f"csv_download_{document_id}",
+                    use_container_width=True
+                )
+
+                # =================================
+                # 4. 보고서 미리보기
+                # =================================
+
+                with st.expander("🔍 보고서 미리보기"):
+
+                    st.markdown(report)
+
+                st.divider()
+
+                # =================================
+                # 5. 문서 삭제 관리
+                # =================================
+
+                with st.expander("⚙️ 문서 관리"):
+
+                    # STEP 1: 삭제 요청
+                    if (
+                        st.session_state.delete_target
+                        != document_id
+                    ):
+
+                        if st.button(
+                            "🗑️ 문서 삭제",
+                            key=f"delete_request_{document_id}"
+                        ):
+
+                            st.session_state.delete_target = (
+                                document_id
+                            )
+
+                            st.rerun()
+
+                    # STEP 2: 최종 확인
+                    else:
+
+                        st.warning(
+                            "⚠️ 정말 이 문서를 삭제하시겠습니까?"
+                        )
+
+                        st.caption(
+                            "삭제하면 회의 자료실에서 제거됩니다."
+                        )
+
+                        col_cancel, col_delete = st.columns(2)
+
+                        # 삭제 취소
+                        with col_cancel:
+
+                            if st.button(
+                                "취소",
+                                key=f"cancel_{document_id}",
+                                use_container_width=True
+                            ):
+
+                                st.session_state.delete_target = None
+
+                                st.rerun()
+
+                        # 최종 삭제
+                        with col_delete:
+
+                            if st.button(
+                                "최종 삭제",
+                                key=f"confirm_delete_{document_id}",
+                                type="primary",
+                                use_container_width=True
+                            ):
+
+                                # 자료실에서 문서 삭제
+                                st.session_state.archived_meetings = [
+                                    doc
+                                    for doc in st.session_state.archived_meetings
+                                    if doc.get("document_id") != document_id
+                                ]
+
+                                # 현재 작업 문서에서도 제거
+                                st.session_state.uploaded_docs.pop(
+                                    title,
+                                    None
+                                )
+
+                                # 활성 문서 변경
+                                if st.session_state.active_doc == title:
+
+                                    remaining = list(
+                                        st.session_state.uploaded_docs.keys()
+                                    )
+
+                                    st.session_state.active_doc = (
+                                        remaining[0]
+                                        if remaining
+                                        else ""
+                                    )
+
+                                st.session_state.delete_target = None
+
+                                st.success("문서가 삭제되었습니다.")
+
+                                st.rerun()
+
+# ══════════════════════════════════════════════════
+# 메뉴 7: 🗂️ 회의 자료실 + 업무 보고서 다운로드
+# ══════════════════════════════════════════════════
+elif page == PAGES[6]:
+
+    import uuid
+    import pandas as pd
+    from datetime import datetime
+    from io import StringIO
+
+    st.subheader("🗂️ 회의 자료실")
+
+    st.caption(
+        "업로드한 회의록을 조회하고, "
+        "현재 작업 문서로 불러오거나 "
+        "업무 보고서를 다운로드할 수 있습니다."
+    )
+
+    # 세션 상태 초기화
+    if "archived_meetings" not in st.session_state:
+        st.session_state.archived_meetings = []
+
+    if "uploaded_docs" not in st.session_state:
+        st.session_state.uploaded_docs = {}
+
+    if "active_doc" not in st.session_state:
+        st.session_state.active_doc = ""
+
+    if "delete_target" not in st.session_state:
+        st.session_state.delete_target = None
+
+    archives = st.session_state.archived_meetings
+
+    # =============================================
+    # 보고서 생성 함수
+    # =============================================
+
+    def make_archive_report(item):
+
+        title = item.get("title", "회의록")
+        content = item.get("content", "")
+        saved_time = item.get("time", "미정")
+
+        tasks = item.get("tasks", [])
+
+        report = f"""# 📋 에이블 AI 업무 보고서
+
+## 1. 회의 정보
+
+- 회의명: {title}
+- 등록 시각: {saved_time}
+- 보고서 생성일: {datetime.now().strftime("%Y-%m-%d")}
+
+## 2. 회의 내용
+
+{content}
+
+## 3. 담당 업무
+
+"""
+
+        if tasks:
+
+            for i, task in enumerate(tasks, 1):
+
+                report += (
+                    f"### {i}. {task.get('업무명', '업무 없음')}\n\n"
+                    f"- 담당자: {task.get('담당자', '미정')}\n"
+                    f"- 마감일: {task.get('마감일', '미정')}\n"
+                    f"- 우선순위: {task.get('우선순위', '미정')}\n"
+                    f"- 세부 작업: {task.get('세부작업', '없음')}\n\n"
+                )
+
+        else:
+            report += "추출된 업무 정보가 없습니다.\n"
+
+        return report
+
+    # =============================================
+    # 회의 자료실
+    # =============================================
+
+    if not archives:
+
+        st.info("아직 저장된 회의 자료가 없습니다.")
+
+    else:
+
+        st.markdown(
+            f"**총 보존 회의록:** `{len(archives)}건`"
+        )
+
+        for idx, item in enumerate(reversed(archives), 1):
+
+            # 문서 고유 ID 생성
+            if "document_id" not in item:
+                item["document_id"] = str(uuid.uuid4())
+
+            document_id = item["document_id"]
+
+            title = item.get("title", "제목 없음")
+            saved_time = item.get("time", "시간 미정")
+            content = item.get("content", "")
+
+            with st.expander(
+                f"🕒 [{saved_time}] {title}",
+                expanded=(idx == 1)
+            ):
+
+                # =================================
+                # 1. 회의록 원문 조회
+                # =================================
+
+                st.markdown("### 📄 회의록 원문")
+
+                st.caption(
+                    f"등록 시각: {saved_time}"
+                )
+
+                st.text_area(
+                    "회의록 내용",
+                    value=content,
+                    height=200,
+                    key=f"arc_view_{document_id}"
+                )
+
+                # =================================
+                # 2. 현재 작업 문서로 불러오기
+                # =================================
+
+                if st.button(
+                    "📥 이 문서를 현재 작업 문서로 다시 불러오기",
+                    key=f"restore_{document_id}",
+                    use_container_width=True
+                ):
+
+                    st.session_state.uploaded_docs[
+                        title
+                    ] = content
+
+                    st.session_state.active_doc = title
+
+                    st.success(
+                        f"'{title}' 문서를 불러왔습니다!"
+                    )
+
+                    st.rerun()
+
+                st.divider()
+
+                # =================================
+                # 3. 업무 보고서 다운로드
+                # =================================
+
+                st.markdown("### 📥 업무 보고서 다운로드")
+
+                st.caption(
+                    "회의 내용, 담당자, 마감일, "
+                    "업무 우선순위 및 세부 작업을 "
+                    "포함합니다."
+                )
+
+                report = make_archive_report(item)
+
+                # Markdown 보고서 다운로드
+                st.download_button(
+                    label="📄 Markdown 업무 보고서 다운로드",
+                    data=report,
+                    file_name=f"AIVLE_report_{document_id}.md",
+                    mime="text/markdown",
+                    key=f"md_download_{document_id}",
+                    use_container_width=True
+                )
+
+                # CSV 업무 목록 생성
+                tasks = item.get("tasks", [])
+
+                columns = [
+                    "업무명",
+                    "담당자",
+                    "마감일",
+                    "우선순위",
+                    "세부작업"
+                ]
+
+                if tasks:
+                    df = pd.DataFrame(tasks)
+                    df = df.reindex(columns=columns)
+                else:
+                    df = pd.DataFrame(columns=columns)
+
+                csv_data = df.to_csv(
+                    index=False
+                ).encode("utf-8-sig")
+
+                st.download_button(
+                    label="📊 CSV 업무 목록 다운로드",
+                    data=csv_data,
+                    file_name=f"AIVLE_tasks_{document_id}.csv",
+                    mime="text/csv",
+                    key=f"csv_download_{document_id}",
+                    use_container_width=True
+                )
+
+                # =================================
+                # 4. 보고서 미리보기
+                # =================================
+
+                with st.expander("🔍 보고서 미리보기"):
+
+                    st.markdown(report)
+
+                st.divider()
+
+                # =================================
+                # 5. 문서 삭제 관리
+                # =================================
+
+                with st.expander("⚙️ 문서 관리"):
+
+                    # STEP 1: 삭제 요청
+                    if (
+                        st.session_state.delete_target
+                        != document_id
+                    ):
+
+                        if st.button(
+                            "🗑️ 문서 삭제",
+                            key=f"delete_request_{document_id}"
+                        ):
+
+                            st.session_state.delete_target = (
+                                document_id
+                            )
+
+                            st.rerun()
+
+                    # STEP 2: 최종 확인
+                    else:
+
+                        st.warning(
+                            "⚠️ 정말 이 문서를 삭제하시겠습니까?"
+                        )
+
+                        st.caption(
+                            "삭제하면 회의 자료실에서 제거됩니다."
+                        )
+
+                        col_cancel, col_delete = st.columns(2)
+
+                        # 삭제 취소
+                        with col_cancel:
+
+                            if st.button(
+                                "취소",
+                                key=f"cancel_{document_id}",
+                                use_container_width=True
+                            ):
+
+                                st.session_state.delete_target = None
+
+                                st.rerun()
+
+                        # 최종 삭제
+                        with col_delete:
+
+                            if st.button(
+                                "최종 삭제",
+                                key=f"confirm_delete_{document_id}",
+                                type="primary",
+                                use_container_width=True
+                            ):
+
+                                # 자료실에서 문서 삭제
+                                st.session_state.archived_meetings = [
+                                    doc
+                                    for doc in st.session_state.archived_meetings
+                                    if doc.get("document_id") != document_id
+                                ]
+
+                                # 현재 작업 문서에서도 제거
+                                st.session_state.uploaded_docs.pop(
+                                    title,
+                                    None
+                                )
+
+                                # 활성 문서 변경
+                                if st.session_state.active_doc == title:
+
+                                    remaining = list(
+                                        st.session_state.uploaded_docs.keys()
+                                    )
+
+                                    st.session_state.active_doc = (
+                                        remaining[0]
+                                        if remaining
+                                        else ""
+                                    )
+
+                                st.session_state.delete_target = None
+
+                                st.success("문서가 삭제되었습니다.")
+
+                                st.rerun()
